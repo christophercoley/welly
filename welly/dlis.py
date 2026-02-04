@@ -232,7 +232,35 @@ def _get_index_channel(frame):
     return frame.channels[0]
 
 
-def _frame_to_curves(frame, index_units=None, convert_index=True):
+# Common null values in DLIS files
+_DLIS_NULL_VALUES = [-9999.0, -9999.25, -999.25, -999.0, 9999.0, 9999.25]
+
+
+def _replace_null_values(data, null_values=None):
+    """
+    Replace common null values with NaN.
+    
+    Args:
+        data: numpy array
+        null_values: list of values to treat as null (default: common DLIS nulls)
+        
+    Returns:
+        numpy array with nulls replaced by NaN
+    """
+    if null_values is None:
+        null_values = _DLIS_NULL_VALUES
+    
+    # Make a copy to avoid modifying original
+    result = data.astype(float)
+    
+    for null_val in null_values:
+        result[np.isclose(result, null_val, rtol=1e-5)] = np.nan
+    
+    return result
+
+
+def _frame_to_curves(frame, index_units=None, convert_index=True,
+                     replace_nulls=True):
     """
     Convert a DLIS frame to a dictionary of Curve objects.
     
@@ -240,6 +268,7 @@ def _frame_to_curves(frame, index_units=None, convert_index=True):
         frame: dlisio Frame object
         index_units: Optional units for the index (overrides detected units)
         convert_index: If True, convert index to feet when possible
+        replace_nulls: If True, replace common null values (-9999, etc.) with NaN
         
     Returns:
         dict: Dictionary mapping channel names to Curve objects
@@ -296,6 +325,10 @@ def _frame_to_curves(frame, index_units=None, convert_index=True):
             # For now, skip multi-dimensional channels
             # TODO: Support 2D curves
             continue
+        
+        # Replace null values with NaN
+        if replace_nulls:
+            ch_data = _replace_null_values(ch_data)
         
         curve = Curve(
             data=ch_data,

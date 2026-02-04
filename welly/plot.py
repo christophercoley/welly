@@ -341,6 +341,9 @@ def plot_well(well,
             ax.spines['bottom'].set_visible(True)
             for sp in ax.spines.values():
                 sp.set_color('gray')
+            # Add horizontal grid lines
+            ax.yaxis.set_major_locator(ticker.AutoLocator())
+            ax.grid(axis='y', color='k', alpha=0.2, lw=0.5, linestyle='-')
 
     plt.close()
     return fig
@@ -506,6 +509,7 @@ def plot_curve(curve,
 
     ax.set_title(curve.df.columns[0])  # no longer needed
     ax.set_xlabel(curve.units)
+    ax.set_ylabel(getattr(curve, 'index_units', None) or 'Depth')
 
     if False:  # labeltop of axes?
         ax.xaxis.tick_top()
