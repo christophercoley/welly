@@ -13,6 +13,10 @@
 
     pip install welly
 
+For DLIS file support, install with the optional dependency:
+
+    pip install welly[dlis]
+
 For developers, there are `pip` options for installing `test`, `docs` or `dev` (docs plus test) dependencies.
 
 
@@ -21,7 +25,8 @@ For developers, there are `pip` options for installing `test`, `docs` or `dev` (
 ```python
 from welly import Well, Project
 
-w = Well.from_las('my_wells/my_well.las')  # Load a single well.
+w = Well.from_las('my_wells/my_well.las')  # Load a single well from LAS.
+w = Well.from_dlis('my_wells/my_well.dlis')  # Load from DLIS (requires dlisio).
 p = Project.from_las('my_wells/*.las')     # Load lots of wells.
 
 gr = w.data['GR']  # One log...
@@ -57,3 +62,9 @@ The [`lasio`](https://github.com/kinverarity1/lasio) project provides a very nic
 Sometimes we want a higher-level object, for example to contain methods that have nothing to do with LAS files. We may want to handle other well data, such as deviation surveys, tops (aka picks), engineering data, striplogs, synthetics, and so on. This is where `welly` comes in.
 
 `welly` uses `lasio` for data I/O, but hides much of it from the user. We recommend you look at both projects before deciding if you need the 'well-level' functionality that `welly` provides.
+
+
+## Supported File Formats
+
+- **LAS** (Log ASCII Standard) - via `lasio`
+- **DLIS** (Digital Log Interchange Standard) - via `dlisio` (optional, install with `pip install welly[dlis]`)

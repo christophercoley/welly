@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.6.0 (Unreleased)
+
+### New Features
+
+- **DLIS Support**: Added `Well.from_dlis()` method to load wells from DLIS files (Digital Log Interchange Standard). DLIS is a binary well log format common in the oil & gas industry. Install with `pip install welly[dlis]`. See [#234](https://github.com/agilescientific/welly/issues/234).
+  - Support for multiple logical files and frames per DLIS file
+  - `return_all=True` parameter to load all wells from a file
+  - Configurable error handling for malformed files
+  
+- **Improved `well.df()` basis handling**: When curves have different depth bases and no common basis can be found, welly now automatically computes a union basis and interpolates. See [#226](https://github.com/agilescientific/welly/issues/226), [#231](https://github.com/agilescientific/welly/issues/231).
+  - New `auto_interpolate` parameter (default `True`)
+  - New `_compute_union_basis()` helper method
+
+- **Enhanced `curve.block()` method**: Added `labels` parameter to assign string labels to blocked zones. Labels are stored as `block_labels` attribute.
+
+### Bug Fixes
+
+- **Improved `to_las()` robustness**: Now validates keys before export, warns about invalid keys but continues with valid ones. Only raises error when ALL keys are invalid. See [#248](https://github.com/agilescientific/welly/issues/248), [#107](https://github.com/agilescientific/welly/issues/107).
+
+- Fixed `curve.block()` bug where array values from `find_edges()` caused `TypeError`.
+
+### Compatibility
+
+- **Pandas 3.0 compatibility**: Full support for pandas 3.0, including:
+  - New string dtype handling (`str` vs `object`)
+  - Copy-on-Write (CoW) compatibility
+  - Updated deprecated patterns
+
+- **Python version support**: Now requires Python 3.10+. Added support for Python 3.12.
+
+### Dependencies
+
+- Added `dlisio>=1.0` as optional dependency for DLIS support
+- Updated minimum versions: `numpy>=1.24`, `scipy>=1.10`, `pandas>=2.0`, `matplotlib>=3.6`, `lasio>=0.30`
+
 ## 0.5.3, spring 2023
 
 - Added option `use_mnemomics` to `well.df()`. The default `False` uses the keys of `well.data` as the column names in the DataFrame. Note that there may be duplicate mnemonics in the resulting DataFrame. This was [issue #218](https://github.com/agilescientific/welly/issues/218). 
