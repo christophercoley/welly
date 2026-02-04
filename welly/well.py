@@ -498,6 +498,206 @@ class Well(object):
 
         return well
 
+    @classmethod
+    def from_dlis(cls,
+                  fname,
+                  frame=None,
+                  logical_file=0,
+                  return_all=False,
+                  error_handling='warn'):
+        """
+        Constructor. Load well(s) from a DLIS file.
+        
+        DLIS (Digital Log Interchange Standard) is a binary well log format
+        that can contain multiple logical files and frames per file.
+        
+        Requires the `dlisio` package: pip install dlisio
+        
+        Args:
+            fname (str): Path to the DLIS file.
+            frame (str): Optional. Name of the frame to load. If None, loads
+                the first frame with data.
+            logical_file (int): Optional. Index of the logical file to load.
+                Default is 0 (first logical file). Ignored if return_all=True.
+            return_all (bool): Optional. If True, return a list of all wells
+                from all logical files and frames. Default is False.
+            error_handling (str): Optional. How to handle DLIS parsing errors.
+                'warn' (default): Log warnings but continue.
+                'strict': Raise exceptions on errors.
+                'ignore': Silently ignore errors.
+        
+        Returns:
+            Well or list of Well: The well object(s). Returns a list if
+                return_all=True, otherwise returns a single Well.
+        
+        Examples:
+            >>> # Load first frame from first logical file
+            >>> well = Well.from_dlis('file.dlis')
+            
+            >>> # Load specific frame
+            >>> well = Well.from_dlis('file.dlis', frame='MAIN')
+            
+            >>> # Load from second logical file
+            >>> well = Well.from_dlis('file.dlis', logical_file=1)
+            
+            >>> # Load all wells from file
+            >>> wells = Well.from_dlis('file.dlis', return_all=True)
+        """
+        from .dlis import (
+            _check_dlisio,
+            _frame_to_curves,
+            _origin_to_location,
+            _build_header_from_origin,
+        )
+        
+        dlis_module, ErrorHandler = _check_dlisio()
+        
+        fname = utils.to_filename(fname)
+        
+        # Configure error handling
+        if error_handling == 'strict':
+            handler = None  # Use default (raises on errors)
+        elif error_handling == 'ignore':
+            handler = ErrorHandler(
+                critical=ErrorHandler.swallow,
+                major=ErrorHandler.swallow,
+                minor=ErrorHandler.swallow,
+            )
+        else:  # 'warn' (default)
+            handler = ErrorHandler(critical=ErrorHandler.swallow)
+        
+        wells = []
+        
+        load_kwargs = {'error_handler': handler} if handler else {}
+        
+        with dlis_module.load(fname, **load_kwargs) as files:
+            if return_all:
+                # Load all logical files and frames
+                for lf_idx, logical_f in enumerate(files):
+                    try:
+                        frames = logical_f.frames
+                    except Exception as e:
+                        warnings.warn(f"Could not read frames from logical file {lf_idx}: {e}")
+                        continue
+                    
+                    for fr in frames:
+                        well = cls._well_from_dlis_frame(
+                            logical_f, fr, fname, lf_idx
+                        )
+                        if well is not None:
+                            wells.append(well)
+                
+                return wells if wells else []
+            
+            else:
+                # Load specific logical file and frame
+                if logical_file >= len(files):
+                    raise WellError(
+                        f"Logical file index {logical_file} out of range. "
+                        f"File contains {len(files)} logical file(s)."
+                    )
+                
+                logical_f = files[logical_file]
+                
+                try:
+                    frames = logical_f.frames
+                except Exception as e:
+                    raise WellError(f"Could not read frames: {e}")
+                
+                if not frames:
+                    raise WellError("No frames found in the logical file.")
+                
+                # Find the requested frame
+                target_frame = None
+                if frame is not None:
+                    for fr in frames:
+                        if fr.name == frame:
+                            target_frame = fr
+                            break
+                    if target_frame is None:
+                        available = [fr.name for fr in frames]
+                        raise WellError(
+                            f"Frame '{frame}' not found. "
+                            f"Available frames: {available}"
+                        )
+                else:
+                    # Use first frame with data
+                    for fr in frames:
+                        try:
+                            data = fr.curves()
+                            if data is not None and len(data) > 0:
+                                target_frame = fr
+                                break
+                        except Exception:
+                            continue
+                    
+                    if target_frame is None:
+                        target_frame = frames[0]
+                
+                well = cls._well_from_dlis_frame(
+                    logical_f, target_frame, fname, logical_file
+                )
+                
+                if well is None:
+                    raise WellError("Could not create well from DLIS frame.")
+                
+                return well
+
+    @classmethod
+    def _well_from_dlis_frame(cls, logical_file, frame, fname, lf_idx):
+        """
+        Create a Well object from a DLIS logical file and frame.
+        
+        Args:
+            logical_file: dlisio LogicalFile object
+            frame: dlisio Frame object
+            fname: Original filename
+            lf_idx: Logical file index
+            
+        Returns:
+            Well or None
+        """
+        from .dlis import (
+            _frame_to_curves,
+            _origin_to_location,
+            _build_header_from_origin,
+        )
+        
+        # Get curves from frame
+        curves = _frame_to_curves(frame)
+        
+        if not curves:
+            return None
+        
+        # Get origin (well metadata)
+        origin = None
+        try:
+            origins = logical_file.origins
+            if origins:
+                origin = origins[0]
+        except Exception:
+            pass
+        
+        # Build location and header
+        location = _origin_to_location(origin)
+        header = _build_header_from_origin(origin, frame)
+        
+        # Create well
+        well_attrs = {
+            'data': curves,
+            'header': header,
+            'location': location,
+            'fname': fname,
+        }
+        
+        well = cls(well_attrs)
+        
+        # Store DLIS-specific metadata
+        well._dlis_frame = frame.name
+        well._dlis_logical_file = lf_idx
+        
+        return well
+
     def to_lasio(self, keys=None, alias=None, basis=None, null_value=-999.25, mnemonic_case=None):
         """
         Makes a lasio object from the current well.
