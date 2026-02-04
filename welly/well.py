@@ -1016,17 +1016,21 @@ class Well(object):
                 # remove all unequally sampled curves (step = 0) from list
                 steps = list(filter((0).__ne__, steps))
             if step:
-                step = step
+                final_step = abs(step)
             elif steps:
-                step = min(steps)
+                # Use minimum absolute step value
+                final_step = min(abs(s) for s in steps)
             else:
-                step = None
-            if min(starts) > min(stops):
-                # create basis array and flip to descending
-                return np.flipud(np.arange(max(stops), min(starts) + 1e-9, step))
-            else:
-                # create basis array
-                return np.arange(min(starts), max(stops) + 1e-9, step)
+                final_step = None
+            
+            if final_step is None:
+                return None
+                
+            # Handle both ascending and descending data
+            min_depth = min(min(starts), min(stops))
+            max_depth = max(max(starts), max(stops))
+            
+            return np.arange(min_depth, max_depth + 1e-9, final_step)
 
         else:
             return None
@@ -1068,24 +1072,22 @@ class Well(object):
         if not starts or not stops:
             return None
 
-        # Determine step: use provided, or minimum non-zero step, or default
+        # Determine step: use provided, or minimum absolute non-zero step, or default
         if step is not None:
-            final_step = step
+            final_step = abs(step)
         elif steps:
-            final_step = min(steps)
+            # Use minimum absolute step value
+            final_step = min(abs(s) for s in steps)
         else:
             # Default step if none available (0.1524m is common LAS step)
             final_step = 0.1524
 
         # Compute union range
-        start_val = min(starts)
-        stop_val = max(stops)
+        start_val = min(min(starts), min(stops))
+        stop_val = max(max(starts), max(stops))
 
-        # Handle descending depth (rare but possible)
-        if start_val > stop_val:
-            return np.flipud(np.arange(stop_val, start_val + 1e-9, final_step))
-        else:
-            return np.arange(start_val, stop_val + 1e-9, final_step)
+        # Generate ascending basis
+        return np.arange(start_val, stop_val + 1e-9, final_step)
 
     def unify_basis(self,
                     keys=None,
