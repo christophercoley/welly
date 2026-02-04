@@ -617,8 +617,7 @@ class Curve(object):
         """
         Return only the numeric columns as numpy array
         """
-        numerics = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
-        numeric_df = self.df.select_dtypes(include=numerics)
+        numeric_df = self.df.select_dtypes(include='number')
         if len(numeric_df.columns) == 1:
             return numeric_df.iloc[:, 0].values
         else:
@@ -1112,8 +1111,12 @@ class Curve(object):
             data[base:] = f(np.copy(self.df.values[base:]))  # See above
         else:
             for top, base, val in zip(tops[:-1], tops[1:], vals[:-1]):
-                data[top:base] = values[int(val)]
-            data[base:] = values[int(vals[-1])]  # See above
+                # Handle case where val might be an array (from 2D data)
+                val_scalar = int(np.asarray(val).flat[0]) if hasattr(val, '__iter__') else int(val)
+                data[top:base] = values[val_scalar]
+            # Handle last segment
+            last_val = int(np.asarray(vals[-1]).flat[0]) if hasattr(vals[-1], '__iter__') else int(vals[-1])
+            data[base:] = values[last_val]  # See above
 
         new_curve.df.iloc[:, :] = data
 

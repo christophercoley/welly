@@ -12,7 +12,6 @@ import warnings
 
 import numpy as np
 import pandas as pd
-from pandas.api.types import is_object_dtype
 
 from . import utils
 from .fields import las_fields as LAS_FIELDS
@@ -389,10 +388,10 @@ class Well(object):
             # remap index time/depth column if specified
             if remap and df_data.columns[0] in remap.keys():
                 mapper = {df_data.columns[0]: remap[df_data.columns[0]]}
-                df_data.rename(columns=mapper, inplace=True)
+                df_data = df_data.rename(columns=mapper)
 
             # set time/depth index, LAS requires it to be the first curve
-            df_data.set_index(df_data.columns[0], inplace=True)
+            df_data = df_data.set_index(df_data.columns[0])
 
             # get index unit from the first curve
             unit = df_header[(df_header["section"] == dataset_name)].iloc[0].unit
@@ -630,9 +629,10 @@ class Well(object):
                 warnings.warn(message, stacklevel=2)
 
         if uwi:
+            df = df.copy()  # Explicit copy for modification (CoW compatibility)
             df['UWI'] = well.uwi
             # add UWI as index as part of a MultiIndex
-            df.set_index(['UWI'], append=True, inplace=True)
+            df = df.set_index(['UWI'], append=True)
             # swap MultiIndex levels
             df = df.swaplevel()
 
@@ -642,21 +642,27 @@ class Well(object):
 
     def _convert_object_cols_to_numeric(self, df):
         """
-        Convert object columns into numeric columns, if possible.
+        Convert object and string columns into numeric columns, if possible.
 
         Args:
             df (pd.DataFrame): dataframe to work
         Returns:
             pd.DataFrame. Whole dataframe with conversions
         """
-        df_nonobject = df.select_dtypes(exclude="object")
-        df_object = df.select_dtypes(include="object")
-        for col in df_object.columns:
+        # In pandas 3.0+, strings may be 'str' dtype instead of 'object'
+        string_like_cols = df.select_dtypes(include=["object", "string"]).columns
+        numeric_cols = df.select_dtypes(exclude=["object", "string"]).columns
+
+        df_numeric = df[numeric_cols].copy()
+        df_string = df[string_like_cols].copy()
+
+        for col in df_string.columns:
             try:
-                df_object[col] = pd.to_numeric(df_object[col])
-            except ValueError:
+                df_string[col] = pd.to_numeric(df_string[col])
+            except (ValueError, TypeError):
                 pass
-        return pd.concat([df_nonobject, df_object], axis=1)
+
+        return pd.concat([df_numeric, df_string], axis=1)
 
     def add_curves_from_las(self, fname, remap=None, funcs=None):
         """

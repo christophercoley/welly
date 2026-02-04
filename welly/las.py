@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 from lasio import HeaderItem, CurveItem, SectionItems
 from pandas._config.config import OptionError
+from pandas.api.types import is_object_dtype, is_string_dtype
 
 from welly.curve import Curve
 from welly import utils
@@ -233,9 +234,8 @@ def from_las_2_or_older(las):
             m = f'Section was not recognized and not parsed: {section}'
             warnings.warn(m, stacklevel=2)
 
-    header.drop(['data'], axis=1, inplace=True)
-
-    header.reset_index(drop=True, inplace=True)
+    header = header.drop(['data'], axis=1)
+    header = header.reset_index(drop=True)
 
     datasets['Header'] = header
 
@@ -525,8 +525,9 @@ def _get_curve_las_df(las, section):
                             columns=df_section.mnemonic.values)
 
         # all curves are parsed as strings if there is a string
+        # pandas 3.0+ uses 'str' dtype instead of 'object' for strings
         for column in data.columns:
-            if data[column].dtype == 'O':
+            if is_object_dtype(data[column]) or is_string_dtype(data[column]):
                 # replace string null values with np.nan
                 data[column] = data[column].replace(
                     str(las.well["NULL"].value), np.nan)
