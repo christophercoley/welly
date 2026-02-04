@@ -49,7 +49,8 @@ class ImageCurve:
                  index_units='ft',
                  description='',
                  null_value=-9999.0,
-                 azimuth_reference='north'):
+                 azimuth_reference='north',
+                 orientation=None):
         
         # Validate inputs
         if data.ndim != 2:
@@ -71,6 +72,18 @@ class ImageCurve:
         self.index_units = index_units
         self.description = description
         self.azimuth_reference = azimuth_reference
+        
+        # Orientation curve for de-rotation (e.g., P1NO, pad 1 azimuth)
+        if orientation is not None:
+            orientation = np.asarray(orientation).astype(float)
+            if len(orientation) != len(index):
+                raise ValueError(
+                    f"Orientation length ({len(orientation)}) must match "
+                    f"index length ({len(index)})"
+                )
+            # Replace null values in orientation
+            orientation[orientation < -999] = np.nan
+        self.orientation = orientation
         
     @property
     def n_azimuths(self):
@@ -129,6 +142,10 @@ class ImageCurve:
         top_idx = np.searchsorted(self.index, top)
         bottom_idx = np.searchsorted(self.index, bottom)
         
+        orientation = None
+        if self.orientation is not None:
+            orientation = self.orientation[top_idx:bottom_idx]
+        
         return ImageCurve(
             data=self.data[top_idx:bottom_idx],
             index=self.index[top_idx:bottom_idx],
@@ -138,7 +155,67 @@ class ImageCurve:
             description=self.description,
             null_value=None,  # Already handled
             azimuth_reference=self.azimuth_reference,
+            orientation=orientation,
         )
+    
+    def derotate(self):
+        """
+        De-rotate the image to align pad positions vertically.
+        
+        Borehole imaging tools rotate as they move down the hole, causing
+        pad gaps to appear as diagonal lines. This method shifts each row
+        to align the pads vertically, making it easier to see continuous
+        features within each pad.
+        
+        Requires an orientation curve (e.g., P1NO - Pad 1 North Offset)
+        to be set on the ImageCurve.
+        
+        Returns:
+            ImageCurve: New ImageCurve with de-rotated data.
+            
+        Raises:
+            ValueError: If no orientation curve is available.
+            
+        Example:
+            >>> images = welly.load_images('fmi.dlis')
+            >>> fmi = images['FMI_DYN']
+            >>> fmi_derotated = fmi.derotate()
+            >>> fmi_derotated.plot()
+        """
+        if self.orientation is None:
+            raise ValueError(
+                "No orientation curve available for de-rotation. "
+                "Load the image with orientation data (e.g., P1NO curve)."
+            )
+        
+        n_cols = self.data.shape[1]
+        derotated = np.zeros_like(self.data)
+        
+        for i in range(len(self.index)):
+            az = self.orientation[i]
+            if np.isnan(az):
+                derotated[i, :] = self.data[i, :]
+            else:
+                # Shift so that the orientation azimuth moves to column 0
+                shift_cols = int(round(-az / 360 * n_cols))
+                derotated[i, :] = np.roll(self.data[i, :], shift_cols)
+        
+        return ImageCurve(
+            data=derotated,
+            index=self.index.copy(),
+            mnemonic=self.mnemonic + '_DEROT',
+            units=self.units,
+            index_units=self.index_units,
+            description=self.description + ' (de-rotated)',
+            null_value=None,
+            azimuth_reference='pad1',
+            orientation=None,  # No longer meaningful after de-rotation
+        )
+    
+    @property
+    def can_derotate(self):
+        """Whether this image has orientation data for de-rotation."""
+        return self.orientation is not None
     
     def plot(self,
              ax=None,
@@ -392,3 +469,206 @@ class ImageCurve:
                 print(f"  Saved: {filename}")
         
         return filenames
+
+    def plot_with_derotated(self,
+                            cmap='YlOrBr',
+                            vmin=None,
+                            vmax=None,
+                            percentile_clip=(5, 95),
+                            figsize=(14, 10),
+                            title=None):
+        """
+        Plot the image alongside its de-rotated version.
+        
+        Creates a side-by-side comparison showing the original image
+        (oriented to geographic north) and the de-rotated image
+        (with pads aligned vertically).
+        
+        Requires an orientation curve to be available.
+        
+        Args:
+            cmap (str): Colormap name. Default 'YlOrBr'.
+            vmin (float): Minimum value for colormap.
+            vmax (float): Maximum value for colormap.
+            percentile_clip (tuple): Percentiles for auto vmin/vmax.
+            figsize (tuple): Figure size. Default (14, 10).
+            title (str): Overall title. If None, uses mnemonic.
+            
+        Returns:
+            tuple: (fig, axes) matplotlib figure and axes array
+            
+        Raises:
+            ValueError: If no orientation curve is available.
+        """
+        if not self.can_derotate:
+            raise ValueError(
+                "No orientation curve available. "
+                "Load the image with orientation data to use this method."
+            )
+        
+        # Calculate color limits
+        if vmin is None:
+            vmin = np.nanpercentile(self.data, percentile_clip[0])
+        if vmax is None:
+            vmax = np.nanpercentile(self.data, percentile_clip[1])
+        
+        # Get de-rotated version
+        derotated = self.derotate()
+        
+        fig, axes = plt.subplots(1, 2, figsize=figsize)
+        
+        # Original
+        ax = axes[0]
+        extent = [0, 360, self.stop, self.start]
+        im = ax.imshow(self.data, aspect='auto', cmap=cmap,
+                       extent=extent, vmin=vmin, vmax=vmax)
+        ax.set_xlabel('Azimuth (degrees)')
+        ax.set_ylabel(f'Depth ({self.index_units})')
+        ax.set_title('Geographic North')
+        ax.set_xticks([0, 90, 180, 270, 360])
+        ax.set_xticklabels(['N', 'E', 'S', 'W', 'N'])
+        plt.colorbar(im, ax=ax, shrink=0.6)
+        
+        # De-rotated
+        ax = axes[1]
+        im = ax.imshow(derotated.data, aspect='auto', cmap=cmap,
+                       extent=extent, vmin=vmin, vmax=vmax)
+        ax.set_xlabel('Pad Position')
+        ax.set_ylabel(f'Depth ({self.index_units})')
+        ax.set_title('De-rotated (Pad 1 at 0°)')
+        ax.set_xticks([0, 45, 90, 135, 180, 225, 270, 315, 360])
+        ax.set_xticklabels(['P1', '', 'P3', '', 'P5', '', 'P7', '', 'P1'])
+        plt.colorbar(im, ax=ax, shrink=0.6)
+        
+        if title is None:
+            title = self.mnemonic
+        fig.suptitle(title, fontsize=14)
+        plt.tight_layout()
+        
+        return fig, axes
+
+    def to_pdf_with_derotated(self,
+                              filename,
+                              feet_per_page=100,
+                              cmap='YlOrBr',
+                              vmin=None,
+                              vmax=None,
+                              percentile_clip=(5, 95),
+                              dpi=100,
+                              show_progress=True):
+        """
+        Export both original and de-rotated images to a multi-page PDF.
+        
+        Each page shows the original (geographic north) and de-rotated
+        (pads aligned) images side by side.
+        
+        Args:
+            filename (str): Output PDF filename
+            feet_per_page (float): Depth interval per page. Default 100.
+            cmap (str): Colormap name. Default 'YlOrBr'.
+            vmin (float): Minimum value for colormap.
+            vmax (float): Maximum value for colormap.
+            percentile_clip (tuple): Percentiles for auto vmin/vmax.
+            dpi (int): Resolution. Default 100.
+            show_progress (bool): Print progress. Default True.
+            
+        Returns:
+            int: Number of pages created
+            
+        Raises:
+            ValueError: If no orientation curve is available.
+        """
+        if not self.can_derotate:
+            raise ValueError(
+                "No orientation curve available. "
+                "Use to_pdf() for single-view export."
+            )
+        
+        # Calculate global color limits
+        if vmin is None:
+            vmin = np.nanpercentile(self.data, percentile_clip[0])
+        if vmax is None:
+            vmax = np.nanpercentile(self.data, percentile_clip[1])
+        
+        # Get de-rotated version
+        derotated = self.derotate()
+        
+        # Determine page boundaries
+        start_depth = int(np.ceil(self.start / feet_per_page) * feet_per_page)
+        end_depth = int(np.floor(self.stop / feet_per_page) * feet_per_page)
+        
+        n_pages = (end_depth - start_depth) // int(feet_per_page)
+        
+        if show_progress:
+            print(f"Creating {n_pages} page PDF (with de-rotated): {filename}")
+            print(f"Depth range: {start_depth} to {end_depth} {self.index_units}")
+        
+        page_count = 0
+        
+        with PdfPages(filename) as pdf:
+            for page_top in range(start_depth, end_depth, int(feet_per_page)):
+                page_bottom = page_top + feet_per_page
+                
+                # Find indices
+                top_idx = np.searchsorted(self.index, page_top)
+                bottom_idx = np.searchsorted(self.index, page_bottom)
+                
+                if bottom_idx <= top_idx:
+                    continue
+                
+                section_depth = self.index[top_idx:bottom_idx]
+                section_orig = self.data[top_idx:bottom_idx, :]
+                section_derot = derotated.data[top_idx:bottom_idx, :]
+                
+                # Calculate figure height
+                n_samples = len(section_depth)
+                fig_height = max(n_samples / 500, 12)
+                fig_height = min(fig_height, 36)
+                
+                fig, axes = plt.subplots(1, 2, figsize=(14, fig_height))
+                
+                extent = [0, 360, section_depth[-1], section_depth[0]]
+                
+                # Original
+                ax = axes[0]
+                im = ax.imshow(section_orig, aspect='auto', cmap=cmap,
+                               extent=extent, vmin=vmin, vmax=vmax)
+                ax.set_xlabel('Azimuth (degrees)', fontsize=12)
+                ax.set_ylabel(f'Depth ({self.index_units})', fontsize=12)
+                ax.set_title('Geographic North', fontsize=12)
+                ax.set_xticks([0, 90, 180, 270, 360])
+                ax.set_xticklabels(['N', 'E', 'S', 'W', 'N'])
+                tick_interval = 10 if feet_per_page >= 50 else 5
+                ax.set_yticks(np.arange(page_top, page_bottom + 1, tick_interval))
+                plt.colorbar(im, ax=ax, shrink=0.5)
+                
+                # De-rotated
+                ax = axes[1]
+                im = ax.imshow(section_derot, aspect='auto', cmap=cmap,
+                               extent=extent, vmin=vmin, vmax=vmax)
+                ax.set_xlabel('Pad Position', fontsize=12)
+                ax.set_ylabel(f'Depth ({self.index_units})', fontsize=12)
+                ax.set_title('De-rotated (Pad 1 at 0°)', fontsize=12)
+                ax.set_xticks([0, 45, 90, 135, 180, 225, 270, 315, 360])
+                ax.set_xticklabels(['P1', '', 'P3', '', 'P5', '', 'P7', '', 'P1'])
+                ax.set_yticks(np.arange(page_top, page_bottom + 1, tick_interval))
+                plt.colorbar(im, ax=ax, shrink=0.5)
+                
+                fig.suptitle(
+                    f'{self.mnemonic}: {page_top}-{page_bottom} {self.index_units}',
+                    fontsize=14
+                )
+                
+                plt.tight_layout()
+                pdf.savefig(fig, dpi=dpi)
+                plt.close(fig)
+                
+                page_count += 1
+                
+                if show_progress and page_count % 10 == 0:
+                    print(f"  Completed {page_count}/{n_pages} pages...")
+        
+        if show_progress:
+            print(f"Saved: {filename} ({page_count} pages)")
+        
+        return page_count

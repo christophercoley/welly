@@ -473,7 +473,8 @@ def _frame_to_image_curves(frame, index_units=None, convert_index=True):
     Extract 2D image curves from a DLIS frame.
     
     This function extracts multi-dimensional channels (like FMI, UBI images)
-    that are skipped by _frame_to_curves().
+    that are skipped by _frame_to_curves(). It also looks for orientation
+    curves (like P1NO) to enable de-rotation.
     
     Args:
         frame: dlisio Frame object
@@ -522,6 +523,24 @@ def _frame_to_image_curves(frame, index_units=None, convert_index=True):
     if convert_index and index_units:
         index_values, index_units = _convert_index_to_feet(index_values, index_units)
     
+    # Look for orientation curve (pad 1 azimuth) for de-rotation
+    # Common names: P1NO, P1NO_FBST, P1NO_FBST_S, P1AZ, PAD1_AZ
+    orientation_names = ['P1NO', 'P1NO_FBST', 'P1NO_FBST_S', 'P1AZ', 'PAD1_AZ',
+                         'P1_NO', 'RB', 'RB_FBST', 'RB_FBST_S']
+    orientation = None
+    orientation_name = None
+    
+    for ch in frame.channels:
+        if ch.name in orientation_names or any(n in ch.name for n in ['P1NO', 'P1AZ']):
+            try:
+                ch_data = data[ch.name]
+                if len(ch_data.shape) == 1:  # Must be 1D
+                    orientation = ch_data.astype(float)
+                    orientation_name = ch.name
+                    break
+            except (KeyError, ValueError):
+                continue
+    
     # Create ImageCurve for each 2D channel
     for channel in frame.channels[1:]:  # Skip index channel
         ch_name = channel.name
@@ -535,7 +554,7 @@ def _frame_to_image_curves(frame, index_units=None, convert_index=True):
         if len(ch_data.shape) != 2:
             continue
         
-        # Create ImageCurve
+        # Create ImageCurve with orientation if available
         image = ImageCurve(
             data=ch_data,
             index=index_values,
@@ -544,8 +563,17 @@ def _frame_to_image_curves(frame, index_units=None, convert_index=True):
             index_units=index_units or 'ft',
             description=getattr(channel, 'long_name', ''),
             null_value=-9999.0,
+            orientation=orientation,
         )
         images[ch_name] = image
+        
+        if orientation is not None and len(images) == 1:
+            # Only print once
+            warnings.warn(
+                f"Found orientation curve '{orientation_name}' - "
+                f"use image.derotate() to align pads vertically",
+                stacklevel=2
+            )
     
     return images
 

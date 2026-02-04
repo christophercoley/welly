@@ -185,3 +185,86 @@ class TestImageExport:
             for fname in filenames:
                 assert os.path.exists(fname)
                 assert fname.endswith('.png')
+
+
+class TestImageDerotation:
+    """Tests for ImageCurve de-rotation functionality."""
+
+    @pytest.fixture
+    def image_with_orientation(self):
+        """Create an image with orientation data."""
+        n_depths = 500
+        n_azimuths = 360
+        depths = np.linspace(5000, 5050, n_depths)
+        data = np.random.rand(n_depths, n_azimuths) * 100
+
+        # Create orientation curve (simulating tool rotation)
+        orientation = np.linspace(0, 180, n_depths)  # Tool rotates 180 degrees
+
+        return ImageCurve(
+            data=data,
+            index=depths,
+            mnemonic='TEST_IMAGE',
+            units='mS/m',
+            orientation=orientation,
+        )
+
+    @pytest.fixture
+    def image_without_orientation(self):
+        """Create an image without orientation data."""
+        n_depths = 500
+        n_azimuths = 360
+        depths = np.linspace(5000, 5050, n_depths)
+        data = np.random.rand(n_depths, n_azimuths) * 100
+
+        return ImageCurve(
+            data=data,
+            index=depths,
+            mnemonic='TEST_IMAGE',
+            units='mS/m',
+        )
+
+    def test_can_derotate_with_orientation(self, image_with_orientation):
+        """Test can_derotate property with orientation data."""
+        assert image_with_orientation.can_derotate is True
+
+    def test_can_derotate_without_orientation(self, image_without_orientation):
+        """Test can_derotate property without orientation data."""
+        assert image_without_orientation.can_derotate is False
+
+    def test_derotate_returns_new_image(self, image_with_orientation):
+        """Test that derotate() returns a new ImageCurve."""
+        derotated = image_with_orientation.derotate()
+
+        assert isinstance(derotated, ImageCurve)
+        assert derotated.shape == image_with_orientation.shape
+        assert derotated.mnemonic == 'TEST_IMAGE_DEROT'
+        assert derotated.azimuth_reference == 'pad1'
+
+    def test_derotate_without_orientation_raises(self, image_without_orientation):
+        """Test that derotate() raises error without orientation."""
+        with pytest.raises(ValueError, match="No orientation curve"):
+            image_without_orientation.derotate()
+
+    def test_get_section_preserves_orientation(self, image_with_orientation):
+        """Test that get_section preserves orientation data."""
+        section = image_with_orientation.get_section(5010, 5040)
+
+        assert section.can_derotate is True
+        assert section.orientation is not None
+        assert len(section.orientation) == section.n_samples
+
+    def test_plot_with_derotated(self, image_with_orientation):
+        """Test plot_with_derotated method."""
+        import matplotlib.pyplot as plt
+
+        fig, axes = image_with_orientation.plot_with_derotated()
+
+        assert fig is not None
+        assert len(axes) == 2
+        plt.close('all')
+
+    def test_plot_with_derotated_without_orientation_raises(self, image_without_orientation):
+        """Test that plot_with_derotated raises error without orientation."""
+        with pytest.raises(ValueError, match="No orientation curve"):
+            image_without_orientation.plot_with_derotated()
