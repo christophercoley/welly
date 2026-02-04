@@ -364,6 +364,8 @@ def to_lasio(well,
     Returns:
         las (lasio.LASFile). The lasio object representation of a LAS file.
     """
+    from .well import WellError
+    
     # Create an empty lasio object.
     l = lasio.LASFile()
     l.well.DATE = str(datetime.today())
@@ -414,7 +416,22 @@ def to_lasio(well,
 
         # Get the mnemonics to select.
         keys = well._get_curve_mnemonics(keys, alias=alias)
-
+        
+        # Validate keys exist in the merged dataframe
+        valid_keys = [k for k in keys if k in df_merged.columns]
+        invalid_keys = [k for k in keys if k not in df_merged.columns]
+        
+        if invalid_keys:
+            warnings.warn(
+                f"Keys not found in well data, skipping: {invalid_keys}",
+                UserWarning,
+                stacklevel=2
+            )
+        
+        if not valid_keys:
+            raise WellError("No valid keys to export. Check that the requested curves exist in the well.")
+        
+        keys = valid_keys
         df_merged = df_merged[keys]
 
         if basis:
@@ -433,6 +450,9 @@ def to_lasio(well,
     other = ''
 
     keys = well._get_curve_mnemonics(keys, alias=alias)
+    
+    # Filter to only valid keys that exist in well.data
+    keys = [k for k in keys if k in well.data]
 
     for key in keys:
         # select curve from well
