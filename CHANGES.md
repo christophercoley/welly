@@ -8,6 +8,8 @@
   - Support for multiple logical files and frames per DLIS file
   - `return_all=True` parameter to load all wells from a file
   - Configurable error handling for malformed files
+  - `welly.describe_dlis()` function to inspect file contents before loading
+  - Rich metadata: tools, frame descriptions, index type stored on Well object
   
 - **Improved `well.df()` basis handling**: When curves have different depth bases and no common basis can be found, welly now automatically computes a union basis and interpolates. See [#226](https://github.com/agilescientific/welly/issues/226), [#231](https://github.com/agilescientific/welly/issues/231).
   - New `auto_interpolate` parameter (default `True`)

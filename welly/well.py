@@ -661,6 +661,7 @@ class Well(object):
             _frame_to_curves,
             _origin_to_location,
             _build_header_from_origin,
+            _get_tools_from_logical_file,
         )
         
         # Get curves from frame
@@ -694,7 +695,10 @@ class Well(object):
         
         # Store DLIS-specific metadata
         well._dlis_frame = frame.name
+        well._dlis_frame_description = getattr(frame, 'description', None)
+        well._dlis_index_type = getattr(frame, 'index_type', None)
         well._dlis_logical_file = lf_idx
+        well._dlis_tools = _get_tools_from_logical_file(logical_file)
         
         return well
 

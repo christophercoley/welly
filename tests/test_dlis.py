@@ -39,6 +39,70 @@ skip_no_testfile = pytest.mark.skipif(
 
 
 @skip_no_dlisio
+@skip_no_testfile
+class TestDescribeDlis:
+    """Tests for describe_dlis() function."""
+
+    def test_describe_returns_dict(self):
+        """Test that describe_dlis returns a dictionary."""
+        import welly
+        info = welly.describe_dlis(DLIS_FILE)
+        
+        assert isinstance(info, dict)
+        assert 'filename' in info
+        assert 'logical_files' in info
+
+    def test_describe_logical_files(self):
+        """Test that logical files info is extracted."""
+        import welly
+        info = welly.describe_dlis(DLIS_FILE)
+        
+        assert len(info['logical_files']) > 0
+        lf = info['logical_files'][0]
+        assert 'well_name' in lf
+        assert 'frames' in lf
+        assert 'tools' in lf
+
+    def test_describe_frames(self):
+        """Test that frame info is extracted."""
+        import welly
+        info = welly.describe_dlis(DLIS_FILE)
+        
+        frames = info['logical_files'][0]['frames']
+        assert len(frames) > 0
+        
+        frame = frames[0]
+        assert 'name' in frame
+        assert 'curves' in frame
+        assert 'n_curves' in frame
+
+
+@skip_no_dlisio
+@skip_no_testfile
+class TestDlisMetadata:
+    """Tests for DLIS metadata on Well objects."""
+
+    def test_well_has_dlis_tools(self):
+        """Test that loaded well has tools metadata."""
+        well = Well.from_dlis(DLIS_FILE)
+        
+        assert hasattr(well, '_dlis_tools')
+        assert isinstance(well._dlis_tools, list)
+
+    def test_well_has_frame_description(self):
+        """Test that loaded well has frame description."""
+        well = Well.from_dlis(DLIS_FILE)
+        
+        assert hasattr(well, '_dlis_frame_description')
+
+    def test_well_has_index_type(self):
+        """Test that loaded well has index type."""
+        well = Well.from_dlis(DLIS_FILE)
+        
+        assert hasattr(well, '_dlis_index_type')
+
+
+@skip_no_dlisio
 class TestDlisImport:
     """Test dlisio import handling."""
 

@@ -55,6 +55,36 @@ def read_df(df, **kwargs):
     return Well.from_df(df, **kwargs)
 
 
+def describe_dlis(fname, **kwargs):
+    """
+    Describe the contents of a DLIS file without fully loading it.
+    
+    This function provides a summary of what's in a DLIS file, including:
+    - Logical files and their origins (well name, company, etc.)
+    - Frames and their curves
+    - Tools used for logging
+    
+    Requires dlisio: pip install welly[dlis]
+    
+    Args:
+        fname (str): Path to the DLIS file.
+        **kwargs: Additional arguments passed to the underlying function.
+    
+    Returns:
+        dict: Summary of the DLIS file contents.
+        
+    Example:
+        >>> import welly
+        >>> info = welly.describe_dlis('well.dlis')
+        >>> for lf in info['logical_files']:
+        ...     print(f"Well: {lf['well_name']}")
+        ...     for frame in lf['frames']:
+        ...         print(f"  Frame {frame['name']}: {frame['n_curves']} curves")
+    """
+    from .dlis import describe_dlis as _describe_dlis
+    return _describe_dlis(fname, **kwargs)
+
+
 __all__ = [
            'Project',
            'Well',
@@ -65,7 +95,8 @@ __all__ = [
            'CRS',
            'quality',
            'tools',  # Various classes in here
-           'read_las'
+           'read_las',
+           'describe_dlis',
           ]
 
 

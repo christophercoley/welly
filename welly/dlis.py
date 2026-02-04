@@ -26,6 +26,151 @@ def _check_dlisio():
         )
 
 
+def describe_dlis(fname, error_handling='warn'):
+    """
+    Describe the contents of a DLIS file without fully loading it.
+    
+    This function provides a summary of what's in a DLIS file, including:
+    - Logical files and their origins (well name, company, etc.)
+    - Frames and their curves
+    - Tools used for logging
+    
+    Args:
+        fname (str): Path to the DLIS file.
+        error_handling (str): How to handle DLIS parsing errors.
+            'warn' (default), 'strict', or 'ignore'.
+    
+    Returns:
+        dict: Summary of the DLIS file contents with keys:
+            - 'filename': The file path
+            - 'logical_files': List of logical file summaries
+            
+    Example:
+        >>> from welly import describe_dlis
+        >>> info = describe_dlis('well.dlis')
+        >>> print(info['logical_files'][0]['well_name'])
+        'My Well'
+        >>> for frame in info['logical_files'][0]['frames']:
+        ...     print(f"{frame['name']}: {frame['curves']}")
+    """
+    dlis_module, ErrorHandler = _check_dlisio()
+    
+    # Configure error handling
+    if error_handling == 'strict':
+        handler = None
+    elif error_handling == 'ignore':
+        handler = ErrorHandler(
+            critical=ErrorHandler.swallow,
+            major=ErrorHandler.swallow,
+            minor=ErrorHandler.swallow,
+        )
+    else:
+        handler = ErrorHandler(critical=ErrorHandler.swallow)
+    
+    load_kwargs = {'error_handler': handler} if handler else {}
+    
+    result = {
+        'filename': str(fname),
+        'logical_files': []
+    }
+    
+    with dlis_module.load(fname, **load_kwargs) as files:
+        for lf_idx, logical_f in enumerate(files):
+            lf_info = {
+                'index': lf_idx,
+                'well_name': None,
+                'field_name': None,
+                'company': None,
+                'creation_time': None,
+                'tools': [],
+                'frames': []
+            }
+            
+            # Extract origin info
+            try:
+                origins = logical_f.origins
+                if origins:
+                    origin = origins[0]
+                    lf_info['well_name'] = getattr(origin, 'well_name', None)
+                    lf_info['field_name'] = getattr(origin, 'field_name', None)
+                    lf_info['company'] = getattr(origin, 'company', None)
+                    lf_info['creation_time'] = str(getattr(origin, 'creation_time', None))
+            except Exception:
+                pass
+            
+            # Extract tools info
+            try:
+                tools = logical_f.tools
+                for tool in tools:
+                    tool_info = {
+                        'name': tool.name,
+                        'description': getattr(tool, 'description', None),
+                        'trademark': getattr(tool, 'trademark_name', None),
+                        'generic_name': getattr(tool, 'generic_name', None),
+                    }
+                    lf_info['tools'].append(tool_info)
+            except Exception:
+                pass
+            
+            # Extract frames info
+            try:
+                frames = logical_f.frames
+                for frame in frames:
+                    frame_info = {
+                        'name': frame.name,
+                        'description': getattr(frame, 'description', None),
+                        'index_type': getattr(frame, 'index_type', None),
+                        'n_curves': len(frame.channels) - 1,  # Exclude index
+                        'curves': [ch.name for ch in frame.channels[1:]],  # Exclude index
+                    }
+                    
+                    # Try to get depth range
+                    try:
+                        data = frame.curves()
+                        if data is not None and len(data) > 0:
+                            index_ch = frame.channels[0]
+                            index_vals = data[index_ch.name]
+                            frame_info['start'] = float(index_vals[0])
+                            frame_info['stop'] = float(index_vals[-1])
+                            frame_info['n_samples'] = len(index_vals)
+                            frame_info['index_units'] = getattr(index_ch, 'units', None)
+                    except Exception:
+                        pass
+                    
+                    lf_info['frames'].append(frame_info)
+            except Exception:
+                pass
+            
+            result['logical_files'].append(lf_info)
+    
+    return result
+
+
+def _get_tools_from_logical_file(logical_file):
+    """
+    Extract tool information from a DLIS logical file.
+    
+    Args:
+        logical_file: dlisio LogicalFile object
+        
+    Returns:
+        list: List of tool info dicts
+    """
+    tools = []
+    try:
+        for tool in logical_file.tools:
+            tool_info = {
+                'name': tool.name,
+                'description': getattr(tool, 'description', None),
+                'trademark': getattr(tool, 'trademark_name', None),
+                'generic_name': getattr(tool, 'generic_name', None),
+            }
+            tools.append(tool_info)
+    except Exception:
+        pass
+    return tools
+
+
 def _get_index_channel(frame):
     """
     Get the index channel from a frame.
