@@ -4,6 +4,7 @@ _version.py
 .ipynb_checkpoints
 .vscode
 .venv
+working-notes/*
 
 # Mac
 .DS_Store

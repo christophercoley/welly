@@ -10,6 +10,14 @@
   - Configurable error handling for malformed files
   - `welly.describe_dlis()` function to inspect file contents before loading
   - Rich metadata: tools, frame descriptions, index type stored on Well object
+
+- **Borehole Image Support**: New `ImageCurve` class for handling 2D borehole image data (FMI, UBI, etc.).
+  - `welly.load_images()` function to load image data from DLIS files
+  - `ImageCurve.plot()` for quick visualization with azimuth labels (N/E/S/W)
+  - `ImageCurve.to_pdf()` for multi-page PDF export (traditional well log format)
+  - `ImageCurve.to_png_series()` for PNG series export
+  - `ImageCurve.get_section()` to extract depth intervals
+  - Automatic null value replacement and percentile-based color scaling
   
 - **Improved `well.df()` basis handling**: When curves have different depth bases and no common basis can be found, welly now automatically computes a union basis and interpolates. See [#226](https://github.com/agilescientific/welly/issues/226), [#231](https://github.com/agilescientific/welly/issues/231).
   - New `auto_interpolate` parameter (default `True`)

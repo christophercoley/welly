@@ -85,6 +85,35 @@ def describe_dlis(fname, **kwargs):
     return _describe_dlis(fname, **kwargs)
 
 
+def load_images(fname, **kwargs):
+    """
+    Load borehole image data from a DLIS file.
+    
+    This function loads 2D image data (like FMI, UBI) from DLIS files.
+    For 1D curves, use Well.from_dlis() instead.
+    
+    Requires dlisio: pip install welly[dlis]
+    
+    Args:
+        fname (str): Path to the DLIS file.
+        frame (str): Optional. Name of the frame to load.
+        logical_file (int): Optional. Index of the logical file. Default 0.
+        **kwargs: Additional arguments.
+    
+    Returns:
+        dict: Dictionary mapping image names to ImageCurve objects.
+        
+    Example:
+        >>> import welly
+        >>> images = welly.load_images('fmi_data.dlis')
+        >>> fmi = images['FMI_DYN']
+        >>> fmi.plot()  # Quick plot
+        >>> fmi.to_pdf('fmi_output.pdf', feet_per_page=100)  # Multi-page PDF
+    """
+    from .dlis import load_images_from_dlis
+    return load_images_from_dlis(fname, **kwargs)
+
+
 __all__ = [
            'Project',
            'Well',
@@ -97,6 +126,7 @@ __all__ = [
            'tools',  # Various classes in here
            'read_las',
            'describe_dlis',
+           'load_images',
           ]
 
 

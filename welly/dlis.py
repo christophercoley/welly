@@ -466,3 +466,184 @@ def _build_header_from_origin(origin, frame=None):
                                      'unit', 'value', 'descr', 'section'])
     
     return pd.DataFrame(rows)
+
+
+def _frame_to_image_curves(frame, index_units=None, convert_index=True):
+    """
+    Extract 2D image curves from a DLIS frame.
+    
+    This function extracts multi-dimensional channels (like FMI, UBI images)
+    that are skipped by _frame_to_curves().
+    
+    Args:
+        frame: dlisio Frame object
+        index_units: Optional units for the index (overrides detected units)
+        convert_index: If True, convert index to feet when possible
+        
+    Returns:
+        dict: Dictionary mapping channel names to ImageCurve objects
+    """
+    from .image import ImageCurve
+    
+    images = {}
+    
+    # Get the curve data as a structured numpy array
+    try:
+        data = frame.curves()
+    except Exception as e:
+        warnings.warn(f"Could not read curves from frame {frame.name}: {e}")
+        return images
+    
+    if data is None or len(data) == 0:
+        return images
+    
+    # Get index channel (first channel, typically depth)
+    index_channel = _get_index_channel(frame)
+    if index_channel is None:
+        warnings.warn(f"No index channel found in frame {frame.name}")
+        return images
+    
+    index_name = index_channel.name
+    
+    # Extract index values
+    try:
+        index_values = data[index_name]
+    except (KeyError, ValueError):
+        first_field = data.dtype.names[1] if len(data.dtype.names) > 1 else data.dtype.names[0]
+        index_values = data[first_field]
+        index_name = first_field
+    
+    # Determine index units
+    original_units = getattr(index_channel, 'units', None)
+    if index_units is None:
+        index_units = original_units
+    
+    # Convert index to standard units (feet) if possible
+    if convert_index and index_units:
+        index_values, index_units = _convert_index_to_feet(index_values, index_units)
+    
+    # Create ImageCurve for each 2D channel
+    for channel in frame.channels[1:]:  # Skip index channel
+        ch_name = channel.name
+        
+        try:
+            ch_data = data[ch_name]
+        except (KeyError, ValueError):
+            continue
+        
+        # Only process multi-dimensional channels
+        if len(ch_data.shape) != 2:
+            continue
+        
+        # Create ImageCurve
+        image = ImageCurve(
+            data=ch_data,
+            index=index_values,
+            mnemonic=ch_name,
+            units=getattr(channel, 'units', None),
+            index_units=index_units or 'ft',
+            description=getattr(channel, 'long_name', ''),
+            null_value=-9999.0,
+        )
+        images[ch_name] = image
+    
+    return images
+
+
+def load_images_from_dlis(fname, frame=None, logical_file=0, error_handling='warn'):
+    """
+    Load image curves from a DLIS file.
+    
+    This function specifically loads 2D image data (like FMI, UBI) from
+    DLIS files. For 1D curves, use Well.from_dlis() instead.
+    
+    Args:
+        fname (str): Path to the DLIS file.
+        frame (str): Optional. Name of the frame to load. If None, loads
+            the first frame with image data.
+        logical_file (int): Optional. Index of the logical file to load.
+            Default is 0 (first logical file).
+        error_handling (str): Optional. How to handle DLIS parsing errors.
+            'warn' (default), 'strict', or 'ignore'.
+    
+    Returns:
+        dict: Dictionary mapping image names to ImageCurve objects.
+        
+    Example:
+        >>> from welly.dlis import load_images_from_dlis
+        >>> images = load_images_from_dlis('fmi_data.dlis')
+        >>> fmi = images['FMI_DYN']
+        >>> fmi.plot()
+        >>> fmi.to_pdf('fmi_output.pdf', feet_per_page=100)
+    """
+    from . import utils
+    
+    dlis_module, ErrorHandler = _check_dlisio()
+    
+    fname = utils.to_filename(fname)
+    
+    # Configure error handling
+    if error_handling == 'strict':
+        handler = None
+    elif error_handling == 'ignore':
+        handler = ErrorHandler(
+            critical=ErrorHandler.swallow,
+            major=ErrorHandler.swallow,
+            minor=ErrorHandler.swallow,
+        )
+    else:
+        handler = ErrorHandler(critical=ErrorHandler.swallow)
+    
+    load_kwargs = {'error_handler': handler} if handler else {}
+    
+    with dlis_module.load(fname, **load_kwargs) as files:
+        if logical_file >= len(files):
+            raise ValueError(
+                f"Logical file index {logical_file} out of range. "
+                f"File contains {len(files)} logical file(s)."
+            )
+        
+        logical_f = files[logical_file]
+        
+        try:
+            frames = logical_f.frames
+        except Exception as e:
+            raise ValueError(f"Could not read frames: {e}")
+        
+        if not frames:
+            raise ValueError("No frames found in the logical file.")
+        
+        # Find the requested frame
+        target_frame = None
+        if frame is not None:
+            for fr in frames:
+                if fr.name == frame:
+                    target_frame = fr
+                    break
+            if target_frame is None:
+                available = [fr.name for fr in frames]
+                raise ValueError(
+                    f"Frame '{frame}' not found. "
+                    f"Available frames: {available}"
+                )
+        else:
+            # Use first frame with 2D data
+            for fr in frames:
+                try:
+                    data = fr.curves()
+                    if data is not None and len(data) > 0:
+                        # Check if any channel is 2D
+                        for ch in fr.channels[1:]:
+                            ch_data = data[ch.name]
+                            if len(ch_data.shape) == 2:
+                                target_frame = fr
+                                break
+                    if target_frame is not None:
+                        break
+                except Exception:
+                    continue
+            
+            if target_frame is None:
+                raise ValueError("No frames with image data found.")
+        
+        return _frame_to_image_curves(target_frame)
