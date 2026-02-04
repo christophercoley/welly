@@ -171,6 +171,55 @@ def _get_tools_from_logical_file(logical_file):
     return tools
 
 
+# Unit conversion factors to feet
+_UNIT_TO_FEET = {
+    # Length units
+    'ft': 1.0,
+    'f': 1.0,
+    'feet': 1.0,
+    'foot': 1.0,
+    'm': 3.28084,
+    'meter': 3.28084,
+    'meters': 3.28084,
+    'metre': 3.28084,
+    'metres': 3.28084,
+    'in': 1/12,
+    'inch': 1/12,
+    'inches': 1/12,
+    '0.1 in': 1/120,  # Tenths of an inch (common in DLIS)
+    '0.1in': 1/120,
+    'cm': 0.0328084,
+    'mm': 0.00328084,
+}
+
+
+def _convert_index_to_feet(index_values, units):
+    """
+    Convert index values to feet if possible.
+    
+    Args:
+        index_values: numpy array of index values
+        units: string unit identifier
+        
+    Returns:
+        tuple: (converted_values, new_units) or (original_values, original_units)
+    """
+    if units is None:
+        return index_values, units
+    
+    # Normalize unit string
+    unit_lower = str(units).lower().strip()
+    
+    # Check if we have a conversion factor
+    if unit_lower in _UNIT_TO_FEET:
+        factor = _UNIT_TO_FEET[unit_lower]
+        if factor != 1.0:
+            converted = index_values * factor
+            return converted, 'ft'
+    
+    return index_values, units
+
+
 def _get_index_channel(frame):
     """
     Get the index channel from a frame.
@@ -183,13 +232,14 @@ def _get_index_channel(frame):
     return frame.channels[0]
 
 
-def _frame_to_curves(frame, index_units=None):
+def _frame_to_curves(frame, index_units=None, convert_index=True):
     """
     Convert a DLIS frame to a dictionary of Curve objects.
     
     Args:
         frame: dlisio Frame object
-        index_units: Optional units for the index
+        index_units: Optional units for the index (overrides detected units)
+        convert_index: If True, convert index to feet when possible
         
     Returns:
         dict: Dictionary mapping channel names to Curve objects
@@ -224,8 +274,13 @@ def _frame_to_curves(frame, index_units=None):
         index_name = first_field
     
     # Determine index units
+    original_units = getattr(index_channel, 'units', None)
     if index_units is None:
-        index_units = getattr(index_channel, 'units', None)
+        index_units = original_units
+    
+    # Convert index to standard units (feet) if possible
+    if convert_index and index_units:
+        index_values, index_units = _convert_index_to_feet(index_values, index_units)
     
     # Create curves for each channel (skip index and FRAMENO)
     for channel in frame.channels[1:]:  # Skip index channel

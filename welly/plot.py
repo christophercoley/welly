@@ -221,6 +221,17 @@ def plot_well(well,
     # Figure out limits
     if basis is None:
         basis = well.survey_basis(keys=tracks, alias=alias)
+    
+    # Fall back to union basis if survey_basis returns None
+    if basis is None:
+        basis = well._compute_union_basis(keys=tracks, alias=alias)
+    
+    if basis is None:
+        raise WellPlotError("Could not determine basis for plotting. Try providing an explicit basis.")
+
+    # Auto-detect best extents for DLIS wells (they often don't start at 0)
+    if extents == 'td' and hasattr(well, '_dlis_frame'):
+        extents = 'curves'
 
     if extents == 'curves':
         upper, lower = basis[0], basis[-1]
