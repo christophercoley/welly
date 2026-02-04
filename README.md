@@ -33,6 +33,17 @@ gr = w.data['GR']  # One log...
 gr.plot()          # ...with some superpowers!
 ```
 
+For borehole image data (FMI, UBI, etc.):
+
+```python
+import welly
+
+images = welly.load_images('fmi_data.dlis')  # Load 2D image data
+fmi = images['FMI_DYN']
+fmi.plot()                                    # Quick visualization
+fmi.to_pdf('fmi_output.pdf')                  # Multi-page PDF export
+```
+
 Next, check out the tutorial notebooks.
 
 
@@ -68,3 +79,5 @@ Sometimes we want a higher-level object, for example to contain methods that hav
 
 - **LAS** (Log ASCII Standard) - via `lasio`
 - **DLIS** (Digital Log Interchange Standard) - via `dlisio` (optional, install with `pip install welly[dlis]`)
+  - 1D curves via `Well.from_dlis()`
+  - 2D borehole images (FMI, UBI, etc.) via `welly.load_images()`

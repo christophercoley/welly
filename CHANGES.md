@@ -18,6 +18,10 @@
   - `ImageCurve.to_png_series()` for PNG series export
   - `ImageCurve.get_section()` to extract depth intervals
   - Automatic null value replacement and percentile-based color scaling
+  - `ImageCurve.derotate()` to align tool pads vertically (removes diagonal gap pattern)
+  - `ImageCurve.plot_with_derotated()` for side-by-side comparison views
+  - `ImageCurve.to_pdf_with_derotated()` for dual-view PDF export
+  - Auto-detection of orientation curves (P1NO, P1AZ) for de-rotation
   
 - **Improved `well.df()` basis handling**: When curves have different depth bases and no common basis can be found, welly now automatically computes a union basis and interpolates. See [#226](https://github.com/agilescientific/welly/issues/226), [#231](https://github.com/agilescientific/welly/issues/231).
   - New `auto_interpolate` parameter (default `True`)
