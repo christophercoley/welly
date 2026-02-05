@@ -15,6 +15,7 @@ from .crs import CRS
 from . import tools
 from . import quality
 from . import defaults
+from . import petro
 
 
 def read_las(path, **kwargs):
@@ -124,6 +125,7 @@ __all__ = [
            'CRS',
            'quality',
            'tools',  # Various classes in here
+           'petro',  # Petrophysics module
            'read_las',
            'describe_dlis',
            'load_images',

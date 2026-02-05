@@ -57,6 +57,26 @@ User guide
     userguide/Projects.ipynb
 
 
+Tutorials
+---------
+
+.. toctree::
+    :maxdepth: 2
+    :caption: Tutorials
+
+    ../tutorial/01_Well.ipynb
+    ../tutorial/02_Curves.ipynb
+    ../tutorial/03_Plotting.ipynb
+    ../tutorial/04_Project.ipynb
+    ../tutorial/05_Location.ipynb
+    ../tutorial/06_Welly_and_LAS.ipynb
+    ../tutorial/07_DLIS_Files.ipynb
+    ../tutorial/08_Petrophysics.ipynb
+    ../tutorial/08b_Petrophysics_LAS.ipynb
+    ../tutorial/09_Petrophysics_Advanced.ipynb
+    ../tutorial/Well_depth_units.ipynb
+
+
 API reference
 -------------
 

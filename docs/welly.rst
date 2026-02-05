@@ -44,6 +44,14 @@ welly.defaults module
    :undoc-members:
    :show-inheritance:
 
+welly.dlis module
+-----------------
+
+.. automodule:: welly.dlis
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 welly.fields module
 -------------------
 
@@ -56,6 +64,14 @@ welly.header module
 -------------------
 
 .. automodule:: welly.header
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+welly.image module
+------------------
+
+.. automodule:: welly.image
    :members:
    :undoc-members:
    :show-inheritance:
@@ -139,6 +155,14 @@ welly.well module
    :members:
    :undoc-members:
    :show-inheritance:
+
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   petro
 
 Module contents
 ---------------

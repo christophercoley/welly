@@ -177,6 +177,35 @@ class Well(object):
 
         self.add_header_item('name', name)
 
+    def petro(self, params=None, alias=None):
+        """
+        Create a PetroInterpreter for this well.
+
+        The PetroInterpreter provides a convenient interface for running
+        petrophysical calculations on the well's log data.
+
+        Args:
+            params: PetrophysicalParameters for the interpretation.
+                If None, uses default sandstone parameters.
+            alias: Dictionary mapping standard names to lists of possible
+                curve mnemonics. If None, uses default aliases.
+
+        Returns:
+            PetroInterpreter instance
+
+        Example:
+            >>> well = Well.from_las('my_well.las')
+            >>> interp = well.petro()
+            >>> interp.vshale(method='larionov')
+            >>> interp.porosity(method='density')
+            >>> interp.sw(method='archie')
+            >>>
+            >>> # Or run standard workflow
+            >>> interp.run_standard_interpretation()
+        """
+        from .petro import PetroInterpreter
+        return PetroInterpreter(self, params=params, alias=alias)
+
     def _get_curve_mnemonics(self, keys=None, alias=None, curves_only=True):
         """
         Get mnemonics for entries in `data`. By default, only gets curves.
