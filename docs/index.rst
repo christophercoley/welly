@@ -74,6 +74,7 @@ Tutorials
     ../tutorial/08_Petrophysics.ipynb
     ../tutorial/08b_Petrophysics_LAS.ipynb
     ../tutorial/09_Petrophysics_Advanced.ipynb
+    ../tutorial/10_Petrophysics_NonIdeal.ipynb
     ../tutorial/Well_depth_units.ipynb
 
 
