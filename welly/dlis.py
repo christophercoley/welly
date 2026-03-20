@@ -127,7 +127,7 @@ def describe_dlis(fname, error_handling='warn'):
                     # Try to get depth range (load only the index channel)
                     try:
                         index_ch = frame.channels[0]
-                        data = frame.curves(channels=[index_ch])
+                        data = _safe_curves(frame, channels=[index_ch])
                         if data is not None and len(data) > 0:
                             index_vals = data[index_ch.name]
                             frame_info['start'] = float(index_vals[0])
@@ -218,6 +218,29 @@ def _convert_index_to_feet(index_values, units):
             return converted, 'ft'
     
     return index_values, units
+
+
+def _safe_curves(frame, channels=None):
+    """
+    Load curves from a frame, with fallback for older dlisio versions.
+
+    Tries selective loading via ``frame.curves(channels=...)`` first.
+    Falls back to ``frame.curves()`` if the keyword isn't supported
+    (dlisio <= 1.0.4).
+
+    Args:
+        frame: dlisio Frame object
+        channels: Optional list of channel objects to load selectively.
+
+    Returns:
+        Structured numpy array of curve data.
+    """
+    if channels is not None:
+        try:
+            return frame.curves(channels=channels)
+        except TypeError:
+            pass
+    return frame.curves()
 
 
 def _get_index_channel(frame):
@@ -425,7 +448,7 @@ def _build_header_from_origin(origin, frame=None):
         index_ch = _get_index_channel(frame)
         if index_ch is not None:
             try:
-                data = frame.curves(channels=[index_ch])
+                data = _safe_curves(frame, channels=[index_ch])
                 if data is not None and len(data) > 0:
                     index_name = index_ch.name
                     index_values = data[index_name]
@@ -659,7 +682,7 @@ def load_images_from_dlis(fname, frame=None, logical_file=0, error_handling='war
             for fr in frames:
                 try:
                     for ch in fr.channels[1:]:
-                        if len(ch.dimension) > 1:
+                        if ch.dimension[0] > 1:
                             target_frame = fr
                             break
                     if target_frame is not None:
@@ -732,7 +755,7 @@ def describe_image_channels(fname, logical_file=0, error_handling='warn'):
         for frame in logical_f.frames:
             image_channels = [
                 ch for ch in frame.channels[1:]
-                if len(ch.dimension) > 1
+                if ch.dimension[0] > 1
             ]
             if not image_channels:
                 continue
@@ -741,7 +764,7 @@ def describe_image_channels(fname, logical_file=0, error_handling='warn'):
             index_ch = frame.channels[0]
             index_data = None
             try:
-                data = frame.curves(channels=[index_ch])
+                data = _safe_curves(frame, channels=[index_ch])
                 if data is not None and len(data) > 0:
                     index_data = data[index_ch.name]
             except Exception:
@@ -831,7 +854,7 @@ def load_single_image(fname, channel_name, logical_file=0, error_handling='warn'
 
             for ch in frame.channels[1:]:
                 if ch.name == channel_name:
-                    if len(ch.dimension) <= 1:
+                    if ch.dimension[0] <= 1:
                         raise ValueError(
                             f"Channel '{channel_name}' is 1D, not an image. "
                             f"Use Well.from_dlis() for 1D curves."
@@ -850,7 +873,7 @@ def load_single_image(fname, channel_name, logical_file=0, error_handling='warn'
             if orientation_ch is not None:
                 channels_to_load.append(orientation_ch)
 
-            data = frame.curves(channels=channels_to_load)
+            data = _safe_curves(frame, channels=channels_to_load)
             if data is None or len(data) == 0:
                 raise ValueError(f"No data returned for channel '{channel_name}'")
 
