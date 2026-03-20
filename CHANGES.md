@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.3-dev
+
+### Bug Fixes
+
+- Fixed `load_single_image()` picking the wrong orientation channel (e.g. Relative Bearing instead of Pad 1 Azimuth) when multiple orientation-like channels exist in a DLIS frame. The first matching channel is now kept, consistent with `load_images_from_dlis()`.
+
 ## 0.6.2-dev
 
 ### New Features

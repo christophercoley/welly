@@ -949,8 +949,10 @@ def load_single_image(fname, channel_name, logical_file=0, error_handling='warn'
                             f"Use Well.from_dlis() for 1D curves."
                         )
                     target_ch = ch
-                if ch.name in orientation_names or any(
-                    n in ch.name for n in ['P1NO', 'P1AZ']
+                if orientation_ch is None and (
+                    ch.name in orientation_names or any(
+                        n in ch.name for n in ['P1NO', 'P1AZ']
+                    )
                 ):
                     orientation_ch = ch
 
