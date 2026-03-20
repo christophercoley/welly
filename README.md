@@ -42,6 +42,23 @@ images = welly.load_images('fmi_data.dlis')  # Load 2D image data
 fmi = images['FMI_DYN']
 fmi.plot()                                    # Quick visualization
 fmi.to_pdf('fmi_output.pdf')                  # Multi-page PDF export
+
+# De-rotate to align tool pads vertically
+if fmi.can_derotate:
+    fmi_derot = fmi.derotate()
+    fmi.plot_with_derotated()                 # Side-by-side comparison
+```
+
+For petrophysical calculations:
+
+```python
+from welly import petro
+
+vsh = petro.vshale_larionov(gr, gr_clean=30, gr_shale=120)
+phie = petro.porosity_effective(phid, vsh, phi_shale=0.05)
+sw = petro.archie(rt, phie, rw=0.04, a=1, m=2, n=2)
+perm = petro.perm_timur(phie, sw)
+pay = petro.net_pay_flag(vsh, phie, sw)
 ```
 
 Next, check out the tutorial notebooks.
@@ -81,3 +98,18 @@ Sometimes we want a higher-level object, for example to contain methods that hav
 - **DLIS** (Digital Log Interchange Standard) - via `dlisio` (optional, install with `pip install welly[dlis]`)
   - 1D curves via `Well.from_dlis()`
   - 2D borehole images (FMI, UBI, etc.) via `welly.load_images()`
+  - Image de-rotation via `ImageCurve.derotate()` (requires orientation curve)
+  - Memory-efficient single-channel loading via `welly.load_single_image()`
+
+
+## Petrophysics
+
+The `welly.petro` module provides petrophysical calculations:
+
+- Shale volume (linear, Larionov, Steiber, Clavier, SP, neutron-density)
+- Porosity (density, neutron, sonic Wyllie/Raymer, neutron-density combination, effective)
+- Water saturation (Archie, Simandoux, Indonesia, Fertl, Waxman-Smits, Dual-Water)
+- Permeability (Timur, Coates, Tixier, Morris-Biggs, Wyllie-Rose, Kozeny-Carman)
+- Net pay flagging and summaries
+- Fluid contact detection (OWC, GOC, FWL, gradient intersection)
+- `PetroInterpreter` for full interpretation workflows with alias support

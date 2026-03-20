@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.2-dev
+
+### New Features
+
+- **Petrophysics Module** (`welly.petro`): Full suite of petrophysical calculations.
+  - Shale volume: linear, Larionov (Tertiary & older), Steiber, Clavier, SP, neutron-density
+  - Porosity: density, neutron, sonic (Wyllie & Raymer), neutron-density combination, effective
+  - Water saturation: Archie, Simandoux, Indonesia, Fertl, Waxman-Smits, Dual-Water
+  - Permeability: Timur, Coates, Tixier, Morris-Biggs, Wyllie-Rose, Kozeny-Carman
+  - Net pay flagging with configurable cutoffs and summary statistics
+  - Fluid contact detection (OWC, GOC, FWL) via gradient intersection
+  - `PetroInterpreter` class for full interpretation workflows with alias support
+  - `PetrophysicalParameters` for managing rock/fluid properties
+
+- **Memory-efficient DLIS image loading**: `welly.load_single_image()` and `welly.describe_image_channels()` for working with large DLIS files without loading all channels.
+
+- **Depth-windowed DLIS reading**: `_read_depth_windowed()` for loading only a specific depth interval from DLIS files.
+
 ## 0.6.0 (Unreleased)
 
 ### New Features
