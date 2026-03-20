@@ -124,11 +124,11 @@ def describe_dlis(fname, error_handling='warn'):
                         'curves': [ch.name for ch in frame.channels[1:]],  # Exclude index
                     }
                     
-                    # Try to get depth range
+                    # Try to get depth range (load only the index channel)
                     try:
-                        data = frame.curves()
+                        index_ch = frame.channels[0]
+                        data = frame.curves(channels=[index_ch])
                         if data is not None and len(data) > 0:
-                            index_ch = frame.channels[0]
                             index_vals = data[index_ch.name]
                             frame_info['start'] = float(index_vals[0])
                             frame_info['stop'] = float(index_vals[-1])
@@ -425,7 +425,7 @@ def _build_header_from_origin(origin, frame=None):
         index_ch = _get_index_channel(frame)
         if index_ch is not None:
             try:
-                data = frame.curves()
+                data = frame.curves(channels=[index_ch])
                 if data is not None and len(data) > 0:
                     index_name = index_ch.name
                     index_values = data[index_name]
@@ -655,17 +655,13 @@ def load_images_from_dlis(fname, frame=None, logical_file=0, error_handling='war
                     f"Available frames: {available}"
                 )
         else:
-            # Use first frame with 2D data
+            # Use first frame with 2D data (check channel metadata, no data loading)
             for fr in frames:
                 try:
-                    data = fr.curves()
-                    if data is not None and len(data) > 0:
-                        # Check if any channel is 2D
-                        for ch in fr.channels[1:]:
-                            ch_data = data[ch.name]
-                            if len(ch_data.shape) == 2:
-                                target_frame = fr
-                                break
+                    for ch in fr.channels[1:]:
+                        if len(ch.dimension) > 1:
+                            target_frame = fr
+                            break
                     if target_frame is not None:
                         break
                 except Exception:
@@ -675,3 +671,217 @@ def load_images_from_dlis(fname, frame=None, logical_file=0, error_handling='war
                 raise ValueError("No frames with image data found.")
         
         return _frame_to_image_curves(target_frame)
+
+
+def describe_image_channels(fname, logical_file=0, error_handling='warn'):
+    """
+    Describe image channels in a DLIS file using only metadata.
+
+    No image array data is loaded — only the depth index is read to
+    determine the depth range. This is safe to call on multi-GB files.
+
+    Args:
+        fname (str): Path to the DLIS file.
+        logical_file (int): Index of the logical file. Default 0.
+        error_handling (str): 'warn' (default), 'strict', or 'ignore'.
+
+    Returns:
+        list: List of dicts, one per image channel, with keys:
+            - name: channel name
+            - n_azimuths: number of azimuthal samples (e.g. 128)
+            - units: channel units
+            - frame: name of the containing frame
+            - start: first depth value
+            - stop: last depth value
+            - n_samples: number of depth samples
+            - index_units: units of the depth index
+
+    Example:
+        >>> from welly.dlis import describe_image_channels
+        >>> channels = describe_image_channels('fmi_data.dlis')
+        >>> for ch in channels:
+        ...     print(f"{ch['name']}: {ch['n_azimuths']} azimuths, "
+        ...           f"{ch['start']:.1f}-{ch['stop']:.1f} {ch['index_units']}")
+    """
+    dlis_module, ErrorHandler = _check_dlisio()
+
+    if error_handling == 'strict':
+        handler = None
+    elif error_handling == 'ignore':
+        handler = ErrorHandler(
+            critical=ErrorHandler.swallow,
+            major=ErrorHandler.swallow,
+            minor=ErrorHandler.swallow,
+        )
+    else:
+        handler = ErrorHandler(critical=ErrorHandler.swallow)
+
+    load_kwargs = {'error_handler': handler} if handler else {}
+
+    channels = []
+
+    with dlis_module.load(fname, **load_kwargs) as files:
+        if logical_file >= len(files):
+            raise ValueError(
+                f"Logical file index {logical_file} out of range. "
+                f"File contains {len(files)} logical file(s)."
+            )
+
+        logical_f = files[logical_file]
+
+        for frame in logical_f.frames:
+            image_channels = [
+                ch for ch in frame.channels[1:]
+                if len(ch.dimension) > 1
+            ]
+            if not image_channels:
+                continue
+
+            # Load only the index channel for depth range
+            index_ch = frame.channels[0]
+            index_data = None
+            try:
+                data = frame.curves(channels=[index_ch])
+                if data is not None and len(data) > 0:
+                    index_data = data[index_ch.name]
+            except Exception:
+                pass
+
+            for ch in image_channels:
+                info = {
+                    'name': ch.name,
+                    'n_azimuths': ch.dimension[0],
+                    'units': getattr(ch, 'units', None),
+                    'description': getattr(ch, 'long_name', ''),
+                    'frame': frame.name,
+                    'start': float(index_data[0]) if index_data is not None else None,
+                    'stop': float(index_data[-1]) if index_data is not None else None,
+                    'n_samples': len(index_data) if index_data is not None else None,
+                    'index_units': getattr(index_ch, 'units', None),
+                }
+                channels.append(info)
+
+    return channels
+
+
+def load_single_image(fname, channel_name, logical_file=0, error_handling='warn'):
+    """
+    Load a single image channel from a DLIS file.
+
+    Memory-efficient alternative to load_images_from_dlis() when you
+    only need one channel. Loads only the depth index, the requested
+    channel, and any orientation curve — not the entire frame.
+
+    Args:
+        fname (str): Path to the DLIS file.
+        channel_name (str): Name of the image channel to load.
+        logical_file (int): Index of the logical file. Default 0.
+        error_handling (str): 'warn' (default), 'strict', or 'ignore'.
+
+    Returns:
+        ImageCurve: The requested image channel.
+
+    Raises:
+        ValueError: If the channel is not found or is not 2D.
+
+    Example:
+        >>> from welly.dlis import load_single_image
+        >>> fmi = load_single_image('fmi_data.dlis', 'FMI_DYN')
+        >>> fmi.plot()
+    """
+    from .image import ImageCurve
+    from . import utils
+
+    dlis_module, ErrorHandler = _check_dlisio()
+
+    fname = utils.to_filename(fname)
+
+    if error_handling == 'strict':
+        handler = None
+    elif error_handling == 'ignore':
+        handler = ErrorHandler(
+            critical=ErrorHandler.swallow,
+            major=ErrorHandler.swallow,
+            minor=ErrorHandler.swallow,
+        )
+    else:
+        handler = ErrorHandler(critical=ErrorHandler.swallow)
+
+    load_kwargs = {'error_handler': handler} if handler else {}
+
+    orientation_names = [
+        'P1NO', 'P1NO_FBST', 'P1NO_FBST_S', 'P1AZ', 'PAD1_AZ',
+        'P1_NO', 'RB', 'RB_FBST', 'RB_FBST_S',
+    ]
+
+    with dlis_module.load(fname, **load_kwargs) as files:
+        if logical_file >= len(files):
+            raise ValueError(
+                f"Logical file index {logical_file} out of range. "
+                f"File contains {len(files)} logical file(s)."
+            )
+
+        logical_f = files[logical_file]
+
+        # Search all frames for the requested channel
+        for frame in logical_f.frames:
+            target_ch = None
+            orientation_ch = None
+            index_ch = frame.channels[0]
+
+            for ch in frame.channels[1:]:
+                if ch.name == channel_name:
+                    if len(ch.dimension) <= 1:
+                        raise ValueError(
+                            f"Channel '{channel_name}' is 1D, not an image. "
+                            f"Use Well.from_dlis() for 1D curves."
+                        )
+                    target_ch = ch
+                if ch.name in orientation_names or any(
+                    n in ch.name for n in ['P1NO', 'P1AZ']
+                ):
+                    orientation_ch = ch
+
+            if target_ch is None:
+                continue
+
+            # Load only the channels we need
+            channels_to_load = [index_ch, target_ch]
+            if orientation_ch is not None:
+                channels_to_load.append(orientation_ch)
+
+            data = frame.curves(channels=channels_to_load)
+            if data is None or len(data) == 0:
+                raise ValueError(f"No data returned for channel '{channel_name}'")
+
+            # Extract index
+            index_values = data[index_ch.name]
+            index_units = getattr(index_ch, 'units', None)
+            if index_units:
+                index_values, index_units = _convert_index_to_feet(
+                    index_values, index_units
+                )
+
+            # Extract orientation
+            orientation = None
+            if orientation_ch is not None:
+                try:
+                    orientation = data[orientation_ch.name].astype(float)
+                except (KeyError, ValueError):
+                    pass
+
+            image = ImageCurve(
+                data=data[target_ch.name],
+                index=index_values,
+                mnemonic=target_ch.name,
+                units=getattr(target_ch, 'units', None),
+                index_units=index_units or 'ft',
+                description=getattr(target_ch, 'long_name', ''),
+                null_value=-9999.0,
+                orientation=orientation,
+            )
+            return image
+
+    raise ValueError(
+        f"Channel '{channel_name}' not found in any frame."
+    )

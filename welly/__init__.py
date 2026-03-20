@@ -115,6 +115,48 @@ def load_images(fname, **kwargs):
     return load_images_from_dlis(fname, **kwargs)
 
 
+def describe_image_channels(fname, **kwargs):
+    """
+    Describe image channels in a DLIS file using only metadata.
+
+    No image array data is loaded — only the depth index is read.
+    Safe to call on multi-GB files.
+
+    Requires dlisio: pip install welly[dlis]
+
+    Args:
+        fname (str): Path to the DLIS file.
+        **kwargs: Additional arguments (logical_file, error_handling).
+
+    Returns:
+        list: List of dicts describing each image channel.
+    """
+    from .dlis import describe_image_channels as _describe
+    return _describe(fname, **kwargs)
+
+
+def load_single_image(fname, channel_name, **kwargs):
+    """
+    Load a single image channel from a DLIS file.
+
+    Memory-efficient alternative to load_images() when you only need
+    one channel. Loads only the depth index, the requested channel,
+    and any orientation curve.
+
+    Requires dlisio: pip install welly[dlis]
+
+    Args:
+        fname (str): Path to the DLIS file.
+        channel_name (str): Name of the image channel to load.
+        **kwargs: Additional arguments (logical_file, error_handling).
+
+    Returns:
+        ImageCurve: The requested image channel.
+    """
+    from .dlis import load_single_image as _load
+    return _load(fname, channel_name, **kwargs)
+
+
 __all__ = [
            'Project',
            'Well',
@@ -128,7 +170,9 @@ __all__ = [
            'petro',  # Petrophysics module
            'read_las',
            'describe_dlis',
+           'describe_image_channels',
            'load_images',
+           'load_single_image',
           ]
 
 
