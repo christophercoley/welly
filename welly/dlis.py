@@ -787,7 +787,81 @@ def describe_image_channels(fname, logical_file=0, error_handling='warn'):
     return channels
 
 
-def load_single_image(fname, channel_name, logical_file=0, error_handling='warn'):
+def _read_depth_windowed(logical_file, frame, top, bottom):
+    """
+    Two-pass depth-windowed reading using dlisio's low-level read_fdata.
+
+    Pass 1: Read only FRAMENO + depth index for all rows (tiny memory).
+    Pass 2: Read full row data for only the rows in the depth window.
+
+    This avoids loading the entire frame into memory, which is critical
+    for large DLIS files (multi-GB) with high-resolution image channels.
+
+    Args:
+        logical_file: dlisio LogicalFile object (must be inside a load context).
+        frame: dlisio Frame object containing the target data.
+        top (float): Top depth of the window (in file's native units).
+        bottom (float): Bottom depth of the window (in file's native units).
+
+    Returns:
+        numpy structured array: Full row data for the depth-windowed rows,
+            with the same dtype as frame.dtype().
+
+    Raises:
+        ValueError: If no rows fall within the depth window.
+    """
+    import dlisio.core as core
+
+    indices = logical_file.fdata_index[frame.fingerprint]
+    full_dtype = frame.dtype()
+    full_fmtstr = frame.fmtstr()
+    index_ch = frame.channels[0]
+
+    # --- Pass 1: read depth index only ---
+    pre, fmt, post = frame.fmtstrchannel(index_ch)
+    idx_np_type = full_dtype[index_ch.name]
+    idx_dtype = np.dtype([('FRAMENO', np.int32), (index_ch.name, idx_np_type)])
+
+    def alloc_idx(size):
+        return np.empty(shape=size, dtype=idx_dtype)
+
+    idx_data = core.read_fdata(
+        pre, "i" + fmt, post,
+        logical_file.file, indices, idx_dtype.itemsize,
+        alloc_idx, logical_file.error_handler
+    )
+    depths = idx_data[index_ch.name]
+
+    # Handle both ascending and descending depth order
+    d_top, d_bottom = min(top, bottom), max(top, bottom)
+    mask = (depths >= d_top) & (depths <= d_bottom)
+    row_idx = np.where(mask)[0]
+
+    del idx_data  # free the index-only array
+
+    if len(row_idx) == 0:
+        raise ValueError(
+            f"No data in depth range {top}-{bottom}. "
+            f"File depth range: {float(depths[0]):.1f} to {float(depths[-1]):.1f}"
+        )
+
+    # --- Pass 2: read full row data for subset ---
+    subset_offsets = [indices[i] for i in row_idx]
+
+    def alloc_full(size):
+        return np.empty(shape=size, dtype=full_dtype)
+
+    data = core.read_fdata(
+        "", full_fmtstr, "",
+        logical_file.file, subset_offsets, full_dtype.itemsize,
+        alloc_full, logical_file.error_handler
+    )
+
+    return data
+
+
+def load_single_image(fname, channel_name, logical_file=0, error_handling='warn',
+                      top=None, bottom=None):
     """
     Load a single image channel from a DLIS file.
 
@@ -795,11 +869,19 @@ def load_single_image(fname, channel_name, logical_file=0, error_handling='warn'
     only need one channel. Loads only the depth index, the requested
     channel, and any orientation curve — not the entire frame.
 
+    When ``top`` and ``bottom`` are provided, uses a two-pass approach
+    that reads only the rows within the depth window, reducing memory
+    from gigabytes to megabytes for large files.
+
     Args:
         fname (str): Path to the DLIS file.
         channel_name (str): Name of the image channel to load.
         logical_file (int): Index of the logical file. Default 0.
         error_handling (str): 'warn' (default), 'strict', or 'ignore'.
+        top (float): Optional. Top depth of the window to load.
+            When provided with ``bottom``, enables depth-windowed reading.
+        bottom (float): Optional. Bottom depth of the window to load.
+            When provided with ``top``, enables depth-windowed reading.
 
     Returns:
         ImageCurve: The requested image channel.
@@ -811,6 +893,11 @@ def load_single_image(fname, channel_name, logical_file=0, error_handling='warn'
         >>> from welly.dlis import load_single_image
         >>> fmi = load_single_image('fmi_data.dlis', 'FMI_DYN')
         >>> fmi.plot()
+
+        Load only a depth window (memory-efficient for large files):
+
+        >>> fmi = load_single_image('big_file.dlis', 'FMI_DYN',
+        ...                         top=5000, bottom=5100)
     """
     from .image import ImageCurve
     from . import utils
@@ -836,6 +923,8 @@ def load_single_image(fname, channel_name, logical_file=0, error_handling='warn'
         'P1NO', 'P1NO_FBST', 'P1NO_FBST_S', 'P1AZ', 'PAD1_AZ',
         'P1_NO', 'RB', 'RB_FBST', 'RB_FBST_S',
     ]
+
+    use_windowed = top is not None and bottom is not None
 
     with dlis_module.load(fname, **load_kwargs) as files:
         if logical_file >= len(files):
@@ -868,12 +957,17 @@ def load_single_image(fname, channel_name, logical_file=0, error_handling='warn'
             if target_ch is None:
                 continue
 
-            # Load only the channels we need
-            channels_to_load = [index_ch, target_ch]
-            if orientation_ch is not None:
-                channels_to_load.append(orientation_ch)
+            # --- Load data ---
+            if use_windowed:
+                # Two-pass depth-windowed read (memory-efficient)
+                data = _read_depth_windowed(logical_f, frame, top, bottom)
+            else:
+                # Original path: try selective channels, fall back to full
+                channels_to_load = [index_ch, target_ch]
+                if orientation_ch is not None:
+                    channels_to_load.append(orientation_ch)
+                data = _safe_curves(frame, channels=channels_to_load)
 
-            data = _safe_curves(frame, channels=channels_to_load)
             if data is None or len(data) == 0:
                 raise ValueError(f"No data returned for channel '{channel_name}'")
 
