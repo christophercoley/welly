@@ -255,6 +255,47 @@ def _get_index_channel(frame):
     return frame.channels[0]
 
 
+def _read_index_only(logical_file, frame):
+    """
+    Read only the depth index channel using dlisio's low-level read_fdata.
+
+    This avoids loading the entire frame (which may include multi-GB image
+    arrays) just to get the depth values.
+
+    Args:
+        logical_file: dlisio LogicalFile object (must be inside a load context).
+        frame: dlisio Frame object.
+
+    Returns:
+        numpy array of depth values, or None on failure.
+    """
+    try:
+        import dlisio.core as core
+    except ImportError:
+        return None
+
+    try:
+        indices = logical_file.fdata_index[frame.fingerprint]
+        full_dtype = frame.dtype()
+        index_ch = frame.channels[0]
+
+        pre, fmt, post = frame.fmtstrchannel(index_ch)
+        idx_np_type = full_dtype[index_ch.name]
+        idx_dtype = np.dtype([('FRAMENO', np.int32), (index_ch.name, idx_np_type)])
+
+        def alloc(size):
+            return np.empty(shape=size, dtype=idx_dtype)
+
+        data = core.read_fdata(
+            pre, "i" + fmt, post,
+            logical_file.file, indices, idx_dtype.itemsize,
+            alloc, logical_file.error_handler
+        )
+        return data[index_ch.name]
+    except Exception:
+        return None
+
+
 # Common null values in DLIS files
 _DLIS_NULL_VALUES = [-9999.0, -9999.25, -999.25, -999.0, 9999.0, 9999.25]
 
@@ -283,7 +324,8 @@ def _replace_null_values(data, null_values=None):
 
 
 def _frame_to_curves(frame, index_units=None, convert_index=True,
-                     replace_nulls=True):
+                     replace_nulls=True, logical_file=None,
+                     top=None, bottom=None):
     """
     Convert a DLIS frame to a dictionary of Curve objects.
     
@@ -292,15 +334,27 @@ def _frame_to_curves(frame, index_units=None, convert_index=True,
         index_units: Optional units for the index (overrides detected units)
         convert_index: If True, convert index to feet when possible
         replace_nulls: If True, replace common null values (-9999, etc.) with NaN
+        logical_file: Optional dlisio LogicalFile, required for depth windowing.
+        top: Optional top depth for depth-windowed loading.
+        bottom: Optional bottom depth for depth-windowed loading.
         
     Returns:
         dict: Dictionary mapping channel names to Curve objects
     """
     curves = {}
     
-    # Get the curve data as a structured numpy array
+    # Filter to 1D channels only (skip image arrays) to avoid loading
+    # multi-GB image data into memory when we only need 1D curves.
+    channels_1d = [ch for ch in frame.channels if ch.dimension[0] <= 1]
+    
+    use_windowed = (top is not None and bottom is not None
+                    and logical_file is not None)
+    
     try:
-        data = frame.curves()
+        if use_windowed:
+            data = _read_depth_windowed(logical_file, frame, top, bottom)
+        else:
+            data = _safe_curves(frame, channels=channels_1d)
     except Exception as e:
         warnings.warn(f"Could not read curves from frame {frame.name}: {e}")
         return curves
@@ -398,13 +452,15 @@ def _origin_to_location(origin):
     return loc
 
 
-def _build_header_from_origin(origin, frame=None):
+def _build_header_from_origin(origin, frame=None, logical_file=None):
     """
     Build a header DataFrame from DLIS origin and frame info.
     
     Args:
         origin: dlisio Origin object
         frame: dlisio Frame object (optional)
+        logical_file: dlisio LogicalFile (optional). When provided, uses
+            low-level reading to get depth range without loading the full frame.
         
     Returns:
         pd.DataFrame: Header DataFrame compatible with welly Well
@@ -448,10 +504,19 @@ def _build_header_from_origin(origin, frame=None):
         index_ch = _get_index_channel(frame)
         if index_ch is not None:
             try:
-                data = _safe_curves(frame, channels=[index_ch])
-                if data is not None and len(data) > 0:
-                    index_name = index_ch.name
-                    index_values = data[index_name]
+                # Try lightweight index-only read first (avoids loading
+                # multi-GB image arrays just to get depth range).
+                index_values = None
+                if logical_file is not None:
+                    index_values = _read_index_only(logical_file, frame)
+
+                # Fall back to _safe_curves if low-level read unavailable
+                if index_values is None:
+                    data = _safe_curves(frame, channels=[index_ch])
+                    if data is not None and len(data) > 0:
+                        index_values = data[index_ch.name]
+
+                if index_values is not None and len(index_values) > 0:
                     index_unit = getattr(index_ch, 'units', 'm')
                     
                     rows.append({
