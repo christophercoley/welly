@@ -533,7 +533,9 @@ class Well(object):
                   frame=None,
                   logical_file=0,
                   return_all=False,
-                  error_handling='warn'):
+                  error_handling='warn',
+                  top=None,
+                  bottom=None):
         """
         Constructor. Load well(s) from a DLIS file.
         
@@ -554,6 +556,10 @@ class Well(object):
                 'warn' (default): Log warnings but continue.
                 'strict': Raise exceptions on errors.
                 'ignore': Silently ignore errors.
+            top (float): Optional. Top depth for depth-windowed loading.
+                When provided with ``bottom``, only rows within the depth
+                window are read, reducing memory for large files.
+            bottom (float): Optional. Bottom depth for depth-windowed loading.
         
         Returns:
             Well or list of Well: The well object(s). Returns a list if
@@ -571,6 +577,9 @@ class Well(object):
             
             >>> # Load all wells from file
             >>> wells = Well.from_dlis('file.dlis', return_all=True)
+            
+            >>> # Load only a depth window (memory-efficient)
+            >>> well = Well.from_dlis('file.dlis', top=3000, bottom=3100)
         """
         from .dlis import (
             _check_dlisio,
@@ -611,7 +620,8 @@ class Well(object):
                     
                     for fr in frames:
                         well = cls._well_from_dlis_frame(
-                            logical_f, fr, fname, lf_idx
+                            logical_f, fr, fname, lf_idx,
+                            top=top, bottom=bottom,
                         )
                         if well is not None:
                             wells.append(well)
@@ -651,10 +661,10 @@ class Well(object):
                         )
                 else:
                     # Use first frame with data
+                    # Check channel count from metadata to avoid loading data
                     for fr in frames:
                         try:
-                            data = fr.curves()
-                            if data is not None and len(data) > 0:
+                            if len(fr.channels) > 1:
                                 target_frame = fr
                                 break
                         except Exception:
@@ -664,7 +674,8 @@ class Well(object):
                         target_frame = frames[0]
                 
                 well = cls._well_from_dlis_frame(
-                    logical_f, target_frame, fname, logical_file
+                    logical_f, target_frame, fname, logical_file,
+                    top=top, bottom=bottom,
                 )
                 
                 if well is None:
@@ -673,7 +684,8 @@ class Well(object):
                 return well
 
     @classmethod
-    def _well_from_dlis_frame(cls, logical_file, frame, fname, lf_idx):
+    def _well_from_dlis_frame(cls, logical_file, frame, fname, lf_idx,
+                              top=None, bottom=None):
         """
         Create a Well object from a DLIS logical file and frame.
         
@@ -682,6 +694,8 @@ class Well(object):
             frame: dlisio Frame object
             fname: Original filename
             lf_idx: Logical file index
+            top: Optional top depth for depth-windowed loading.
+            bottom: Optional bottom depth for depth-windowed loading.
             
         Returns:
             Well or None
@@ -694,7 +708,12 @@ class Well(object):
         )
         
         # Get curves from frame
-        curves = _frame_to_curves(frame)
+        curves = _frame_to_curves(
+            frame,
+            logical_file=logical_file,
+            top=top,
+            bottom=bottom,
+        )
         
         if not curves:
             return None
@@ -710,7 +729,7 @@ class Well(object):
         
         # Build location and header
         location = _origin_to_location(origin)
-        header = _build_header_from_origin(origin, frame)
+        header = _build_header_from_origin(origin, frame, logical_file=logical_file)
         
         # Create well
         well_attrs = {
